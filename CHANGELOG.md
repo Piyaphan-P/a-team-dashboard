@@ -5,6 +5,57 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0](https://github.com/Piyaphan-P/a-team-dashboard/compare/v1.3.0...v1.4.0) (2026-06-02)
+
+### ✨ Features
+
+* **viz:** keyboard a11y on AgentNetworkGraph nodes — Tab/Enter/Space/Esc + aria-label per node
+* **logs:** virtualize LogViewer feed with react-window (auto-engages at >200 entries) — 10001-row render now p99 < 100ms (was 12s)
+* **workflow:** new Workflow tab + WorkflowDiagram component showing A-Team 5-stage pipeline (Strategy → Design → Build → Review → Test → Summary) with FLOW v4.1 cross-team handoff callout
+* **e2e:** Playwright specs for LogViewer + TokenUsagePanel + WorkflowDiagram tabs
+
+### ⬆️ Dependency Updates (majors)
+
+* vite 7 → 8 (rolldown bundler — build 7s → 528ms, bundle 491 KB → 436 KB)
+* @vitejs/plugin-react 5 → 6
+* jsdom 28 → 29
+* lucide-react 0.563 → 1.17
+
+### 🔧 Build Tooling
+
+* vite.config.js: `manualChunks` converted to function form (Vite 8 / rolldown requirement)
+* test/setup.js: polyfill ResizeObserver (jsdom dependency for react-window v2)
+
+## [1.3.0](https://github.com/Piyaphan-P/a-team-dashboard/compare/v1.2.8...v1.3.0) (2026-06-01)
+
+### ✨ Features (A-Team edition)
+
+* **logs:** `/api/logs` endpoint with query allowlist + ETag + JSONL fallback; LogViewer UI with 280px filter rail + virtualized feed + JSON/CSV export (10k cap)
+* **viz:** AgentNetworkGraph upgraded with typed edges (spawn dashed / message solid arrow), click-to-drill side panel, D3 animated transitions
+* **tokens:** TokenUsagePanel reading `~/.claude/projects/*/*.jsonl` Claude Code session files — model/project/session breakdown + active-pulse (<5min)
+* **logging:** `server/activityLog.js` ring buffer (5000 cap) with JSONL daily rotation
+* **security:** scrypt password auth with timing-safe compare + 0o600 keyfile + 256-bit token rotation
+
+### 🎨 Rebrand
+
+* Package renamed to `@piyaphan-p/a-team-dashboard`
+* Header / bin / repository URL updated for A-Team edition
+* New README focused on A-Team 5-stage pipeline
+
+### ⬆️ Dependency Updates (minor/patch)
+
+* express-rate-limit, helmet, ws (production)
+* @playwright/test, @tailwindcss/vite, @vitest/coverage-v8, dayjs, jsfuzz, react, react-dom, recharts (dev)
+
+### 🔒 Security
+
+* CI actions pinned to latest SHAs: setup-node v6.4.0, upload-artifact v7.0.1, codeql v4.36.0, trufflehog v3.95.3, trivy
+
+### 🔧 Build
+
+* Tailwind CSS class-name escape (`\\:` → `\:`) — eliminates 10+ lightningcss warnings
+* LogViewer lazy-loaded (main bundle 508 KB → 490 KB)
+
 ## [1.2.4](https://github.com/mukul975/agentdashboard/compare/v1.2.3...v1.2.4) (2026-02-18)
 
 ### 🐛 Bug Fixes
