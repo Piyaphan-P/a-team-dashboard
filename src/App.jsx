@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, lazy, Suspense } from 'react';
 import { Toaster } from 'react-hot-toast';
-import { Activity, Github, ExternalLink, BarChart3, MessageSquare, Users, Settings, History as HistoryIcon, Archive, Inbox, TrendingUp } from 'lucide-react';
+import { Activity, ExternalLink, BarChart3, MessageSquare, Users, Settings, History as HistoryIcon, Archive, Inbox, TrendingUp, Coins, FileText } from 'lucide-react';
 import { useWebSocket } from './hooks/useWebSocket';
 import { useInboxNotifications } from './hooks/useInboxNotifications';
 import { useToastNotifications } from './hooks/useToastNotifications';
@@ -19,12 +19,14 @@ import { TeamHistory } from './components/TeamHistory';
 import { AgentOutputViewer } from './components/AgentOutputViewer';
 const ArchiveViewer = lazy(() => import('./components/ArchiveViewer').then(m => ({ default: m.ArchiveViewer })));
 import { InboxViewer } from './components/InboxViewer';
+import { LogViewer } from './components/LogViewer';
 import { TeamTimeline } from './components/TeamTimeline';
 import { CommandPalette } from './components/CommandPalette';
 import { KeyboardShortcutsModal } from './components/KeyboardShortcutsModal';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useNotifications } from './hooks/useNotifications';
 const AnalyticsPanel = lazy(() => import('./components/AnalyticsPanel').then(m => ({ default: m.AnalyticsPanel })));
+const TokenUsagePanel = lazy(() => import('./components/TokenUsagePanel').then(m => ({ default: m.TokenUsagePanel })));
 import { TeamPerformancePanel } from './components/TeamPerformancePanel';
 import { NotificationCenter } from './components/NotificationCenter';
 import { useTheme } from './hooks/useTheme';
@@ -64,11 +66,11 @@ function App() {
 
   // Build WebSocket URL with token
   const wsUrl = useMemo(() => {
-    const base = `ws://${window.location.hostname}:3001`;
+    const base = `ws://${window.location.hostname}:${window.location.port || 3001}`;
     if (authToken) return `${base}?token=${authToken}`;
     return base;
   }, [authToken]);
-  const { teams, stats, teamHistory, agentOutputs, allInboxes, isConnected, error, lastRawMessage, connectionStatus, reconnectAttempts } = useWebSocket(wsUrl); // lgtm[js/call-to-non-callable]
+  const { teams, stats, teamHistory, agentOutputs, allInboxes, logs, isConnected, error, lastRawMessage, connectionStatus, reconnectAttempts } = useWebSocket(wsUrl); // lgtm[js/call-to-non-callable]
 
   // Auth gate states
   const showSetup = authStatus?.setup === true;
@@ -122,7 +124,7 @@ function App() {
 
   // Keyboard navigation handler for tabs
   const handleTabKeyDown = useCallback((e) => {
-    const tabs = ['overview', 'teams', 'communication', 'monitoring', 'history', 'archive', 'inboxes', 'analytics'];
+    const tabs = ['overview', 'teams', 'communication', 'monitoring', 'history', 'archive', 'inboxes', 'logs', 'analytics', 'tokens'];
     const currentIndex = tabs.indexOf(activeTab);
 
     if (e.key === 'ArrowRight') {
@@ -346,6 +348,23 @@ function App() {
               )}
             </button>
             <button
+              id="tab-logs"
+              onClick={() => setActiveTab('logs')}
+              onKeyDown={handleTabKeyDown}
+              role="tab"
+              aria-selected={activeTab === 'logs'}
+              aria-controls="tab-panel-logs"
+              aria-label="Logs tab"
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all whitespace-nowrap ${
+                activeTab === 'logs'
+                  ? 'bg-claude-orange text-white shadow-lg'
+                  : 'tab-btn-inactive'
+              }`}
+            >
+              <FileText className="h-4 w-4" aria-hidden="true" />
+              Logs<span className="ml-1.5 opacity-40 font-mono hidden lg:inline" style={{ fontSize: '10px' }} aria-hidden="true">⌘0</span>
+            </button>
+            <button
               id="tab-analytics"
               onClick={() => setActiveTab('analytics')}
               onKeyDown={handleTabKeyDown}
@@ -361,6 +380,23 @@ function App() {
             >
               <TrendingUp className="h-4 w-4" aria-hidden="true" />
               Analytics<span className="ml-1.5 opacity-40 font-mono hidden lg:inline" style={{ fontSize: '10px' }} aria-hidden="true">⌘8</span>
+            </button>
+            <button
+              id="tab-tokens"
+              onClick={() => setActiveTab('tokens')}
+              onKeyDown={handleTabKeyDown}
+              role="tab"
+              aria-selected={activeTab === 'tokens'}
+              aria-controls="tab-panel-tokens"
+              aria-label="Tokens tab"
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all whitespace-nowrap ${
+                activeTab === 'tokens'
+                  ? 'bg-claude-orange text-white shadow-lg'
+                  : 'tab-btn-inactive'
+              }`}
+            >
+              <Coins className="h-4 w-4" aria-hidden="true" />
+              Tokens<span className="ml-1.5 opacity-40 font-mono hidden lg:inline" style={{ fontSize: '10px' }} aria-hidden="true">⌘9</span>
             </button>
           </div>
         </nav>
@@ -578,11 +614,29 @@ function App() {
             </div>
           )}
 
+          {activeTab === 'logs' && (
+            <div role="tabpanel" id="tab-panel-logs" aria-labelledby="tab-logs" className="animate-fadeIn">
+              <ErrorBoundary name="Log Viewer">
+                <LogViewer logs={logs} loading={connectionStatus === 'connecting' && logs.length === 0} />
+              </ErrorBoundary>
+            </div>
+          )}
+
           {activeTab === 'analytics' && (
             <div role="tabpanel" id="tab-panel-analytics" aria-labelledby="tab-analytics" className="animate-fadeIn">
               <ErrorBoundary name="Analytics Panel">
                 <Suspense fallback={<SkeletonChart />}>
                   <AnalyticsPanel teams={teams} allInboxes={allInboxes} />
+                </Suspense>
+              </ErrorBoundary>
+            </div>
+          )}
+
+          {activeTab === 'tokens' && (
+            <div role="tabpanel" id="tab-panel-tokens" aria-labelledby="tab-tokens" className="animate-fadeIn">
+              <ErrorBoundary name="Token Usage Panel">
+                <Suspense fallback={<SkeletonChart />}>
+                  <TokenUsagePanel />
                 </Suspense>
               </ErrorBoundary>
             </div>
@@ -593,36 +647,11 @@ function App() {
       {/* Footer */}
       <footer style={{ background: 'var(--footer-bg)', borderTop: '1px solid var(--footer-border)', marginTop: '3rem' }}>
         <div className="container mx-auto px-6 py-6">
-          <div className="flex items-center justify-between text-sm" style={{ color: 'var(--text-secondary)' }}>
-            <div className="flex items-center gap-2">
-              <Activity className="h-4 w-4 text-claude-orange" aria-hidden="true" />
-              <span>Claude Code Agent Dashboard</span>
-              <span className="text-gray-600">•</span>
-              <span className="text-gray-500">Built by <a href="https://mahipal.engineer" target="_blank" rel="noopener noreferrer" className="text-claude-orange hover:text-orange-400 transition-colors">mahipal.engineer</a></span>
-            </div>
-            <div className="flex items-center gap-4">
-              <button onClick={() => setShortcutsOpen(true)} className="flex items-center gap-1.5 hover:text-white transition-colors" aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)">
-                <kbd className="inline-flex items-center justify-center w-6 h-6 text-xs font-semibold bg-gray-700 border border-gray-600 rounded">?</kbd>
-                <span className="hidden sm:inline">Shortcuts</span>
-              </button>
-              <a
-                href="https://github.com/anthropics/claude-code"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-2 hover:text-white transition-colors"
-              >
-                <Github className="h-4 w-4" aria-hidden="true" />
-                <span>GitHub</span>
-              </a>
-              <a
-                href="https://code.claude.com"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="hover:text-white transition-colors"
-              >
-                Documentation
-              </a>
-            </div>
+          <div
+            className="text-center text-sm font-medium"
+            style={{ color: 'var(--text-secondary)' }}
+          >
+            แก้ไขโดย Tonza PiyaP
           </div>
         </div>
       </footer>
