@@ -12,6 +12,8 @@ const compression = require('compression');
 const crypto = require('crypto');
 const { exec } = require('child_process');
 const config = require('./config');
+const usage = require('./usage');
+const activityLog = require('./server/activityLog');
 
 const IS_WINDOWS = process.platform === 'win32';
 
@@ -174,7 +176,7 @@ app.use((req, res, next) => {
   const start = Date.now();
   res.on('finish', () => {
     if (req.path.startsWith('/api/')) {
-      console.log(`API ${res.statusCode} ${Date.now()-start}ms`);
+      console.log(`API ${res.statusCode} ${req.method} ${req.path} ${Date.now()-start}ms`);
     }
   });
   next();
@@ -598,6 +600,216 @@ async function readTasks(teamName) {
   }
 }
 
+// ---------- F2.a: Log Buffer + LogEntry normalization ----------
+
+/** Maximum number of LogEntry rows kept in memory (newest-first). */
+const LOG_BUFFER_CAP = 5000;
+
+/**
+ * In-memory ring buffer of LogEntry rows, sorted newest-first.
+ * Populated at startup by buildInitialLogBuffer() and appended on every
+ * chokidar taskWatcher event via appendLogEntries().
+ * @type {Array<Object>}
+ */
+let logBuffer = [];
+
+/**
+ * Set of entryId strings already in logBuffer, used for O(1) dedup.
+ * @type {Set<string>}
+ */
+const entryIdSet = new Set();
+
+/**
+ * Normalizes a task JSON object into one or more LogEntry rows.
+ *
+ * @param {Object|null} task       - Parsed task JSON (null for 'removed' events)
+ * @param {string}      team       - Parent directory name under ~/.claude/tasks
+ * @param {string}      taskId     - Basename of the file without .json
+ * @param {string}      action     - 'created'|'updated'|'status_change'|'completed'|'removed'
+ * @param {number}      eventTs    - Epoch ms timestamp for this event
+ * @returns {Array<Object>}        Array of LogEntry objects (usually 1, 0 on fatal parse error)
+ */
+function normalizeTaskToLogEntries(task, team, taskId, action, eventTs) {
+  try {
+    // Build a stable entryId
+    const stage = task && task.stage ? task.stage : null;
+    const status = task && task.status ? task.status : null;
+    const stagePart = stage || status || action;
+    const entryId = `${team}/${taskId}#${stagePart}@${eventTs}`;
+
+    // Derive type
+    let type = 'task';
+    if (action === 'removed') {
+      type = 'system';
+    } else if (action === 'status_change') {
+      type = 'status';
+    }
+
+    // Build summary (max 200 chars)
+    let summaryRaw = '';
+    if (task) {
+      const statusLabel = status || '';
+      const subject = task.subject || task.title || taskId;
+      summaryRaw = statusLabel ? `[${statusLabel}] ${subject}` : subject;
+    } else {
+      summaryRaw = `[removed] ${taskId}`;
+    }
+    const summary = summaryRaw.slice(0, 200);
+
+    // Determine timestamp: for 'created' use task.createdAt, else use eventTs
+    const timestamp = (action === 'created' && task && task.createdAt)
+      ? (typeof task.createdAt === 'number' ? task.createdAt : new Date(task.createdAt).getTime())
+      : eventTs;
+
+    const entry = {
+      entryId,
+      timestamp: isNaN(timestamp) ? eventTs : timestamp,
+      agent: (task && (task.assignedTo || task.agent)) ? (task.assignedTo || task.agent) : (team || ''),
+      team,
+      taskId,
+      action,
+      type,
+      summary,
+      status: status || null,
+      feature: (task && task.feature) ? task.feature : null,
+      stage: stage || null,
+      raw: action === 'removed' ? null : (task || null)
+    };
+
+    return [entry];
+  } catch (err) {
+    // Return a system-type error entry so callers are not left with no entry
+    console.error('[LOG] normalizeTaskToLogEntries error:', err.message);
+    return [{
+      entryId: `${team}/${taskId}#error@${eventTs}`,
+      timestamp: eventTs,
+      agent: team || '',
+      team,
+      taskId,
+      action,
+      type: 'system',
+      summary: `[error] Failed to normalize task: ${String(err.message).slice(0, 150)}`,
+      status: null,
+      feature: null,
+      stage: null,
+      raw: null
+    }];
+  }
+}
+
+/**
+ * Deduplicates and prepends entries to logBuffer, then trims to LOG_BUFFER_CAP.
+ * Maintains newest-first sort order (entries param is assumed to be newer).
+ *
+ * @param {Array<Object>} entries - Array of LogEntry objects to append
+ */
+function appendLogEntries(entries) {
+  const fresh = [];
+  for (const entry of entries) {
+    if (!entryIdSet.has(entry.entryId)) {
+      entryIdSet.add(entry.entryId);
+      fresh.push(entry);
+    }
+  }
+  if (fresh.length === 0) return;
+
+  // Prepend new entries (they are the latest) then re-sort by timestamp DESC
+  logBuffer = [...fresh, ...logBuffer].sort((a, b) => b.timestamp - a.timestamp);
+
+  // Trim to cap — remove oldest (tail of the sorted array)
+  if (logBuffer.length > LOG_BUFFER_CAP) {
+    const removed = logBuffer.splice(LOG_BUFFER_CAP);
+    for (const entry of removed) {
+      entryIdSet.delete(entry.entryId);
+    }
+  }
+}
+
+/**
+ * Scans ~/.claude/tasks/**\/\*.json, sorts by mtime DESC, takes the 5000 newest,
+ * normalizes each as action='created', and populates logBuffer.
+ * Should be called once after taskWatcher emits 'ready'.
+ *
+ * @returns {Promise<void>}
+ */
+async function buildInitialLogBuffer() {
+  try {
+    await fs.access(TASKS_DIR);
+    const teams = await fs.readdir(TASKS_DIR);
+
+    // Collect { filePath, mtime, team, taskId } for all task files
+    const fileInfos = [];
+
+    await Promise.all(teams.map(async (team) => {
+      try {
+        const teamDir = path.join(TASKS_DIR, team);
+        const teamStat = await fs.stat(teamDir);
+        if (!teamStat.isDirectory()) return;
+
+        const files = await fs.readdir(teamDir);
+        await Promise.all(files.map(async (file) => {
+          if (!file.endsWith('.json')) return;
+          try {
+            const filePath = path.join(teamDir, file);
+            const stat = await fs.stat(filePath);
+            fileInfos.push({
+              filePath,
+              mtime: stat.mtimeMs,
+              team,
+              taskId: path.basename(file, '.json')
+            });
+          } catch {
+            // Skip unreadable files silently
+          }
+        }));
+      } catch {
+        // Skip teams whose dir cannot be read
+      }
+    }));
+
+    // Sort by mtime DESC, take newest LOG_BUFFER_CAP
+    fileInfos.sort((a, b) => b.mtime - a.mtime);
+    const toLoad = fileInfos.slice(0, LOG_BUFFER_CAP);
+
+    // Read + normalize each file
+    const allEntries = [];
+    await Promise.all(toLoad.map(async ({ filePath, mtime, team, taskId }) => {
+      try {
+        const raw = await fs.readFile(filePath, 'utf8');
+        const task = JSON.parse(raw);
+        const entries = normalizeTaskToLogEntries(task, team, taskId, 'created', mtime);
+        allEntries.push(...entries);
+      } catch (err) {
+        // Emit a system error entry for unparseable files
+        allEntries.push({
+          entryId: `${team}/${taskId}#parse-error@${mtime}`,
+          timestamp: mtime,
+          agent: team || '',
+          team,
+          taskId,
+          action: 'created',
+          type: 'system',
+          summary: `[error] Failed to parse task file: ${String(err.message).slice(0, 150)}`,
+          status: null,
+          feature: null,
+          stage: null,
+          raw: null
+        });
+      }
+    }));
+
+    // Use appendLogEntries to dedup and sort
+    appendLogEntries(allEntries);
+    console.log(`[LOG] Initial log buffer built: ${logBuffer.length} entries`);
+  } catch (err) {
+    if (err.code !== 'ENOENT') {
+      console.error('[LOG] Error building initial log buffer:', err.message);
+    } else {
+      console.log('[LOG] Tasks directory does not exist yet — log buffer is empty');
+    }
+  }
+}
+
 // In-memory cache for expensive operations
 const cache = new Map();
 const CACHE_TTL = 5000; // 5 seconds
@@ -936,6 +1148,27 @@ async function readAllInboxes() {
 let broadcastTeamsDebounceTimer = null;
 let broadcastTasksDebounceTimer = null;
 
+// F2.b: Debounced log broadcast — collects delta LogEntry rows and emits
+// {type:'log:new', entries:[...]} no more than once per 250 ms window.
+let logBroadcastDebounceTimer = null;
+let logBroadcastDeltaBuffer = [];
+
+function debouncedLogBroadcast(deltaEntries) {
+  // Accumulate delta rows into the buffer
+  logBroadcastDeltaBuffer = logBroadcastDeltaBuffer.concat(deltaEntries);
+
+  if (logBroadcastDebounceTimer) return; // timer already running — just accumulated
+
+  logBroadcastDebounceTimer = setTimeout(() => {
+    const entries = logBroadcastDeltaBuffer;
+    logBroadcastDeltaBuffer = [];
+    logBroadcastDebounceTimer = null;
+    if (entries.length > 0) {
+      broadcast({ type: 'log:new', entries });
+    }
+  }, 250);
+}
+
 function debouncedTeamsBroadcast(eventType) {
   if (broadcastTeamsDebounceTimer) clearTimeout(broadcastTeamsDebounceTimer);
   broadcastTeamsDebounceTimer = setTimeout(async () => {
@@ -997,6 +1230,7 @@ function setupWatchers() {
         created: Date.now(),
         lastSeen: Date.now()
       });
+      activityLog.logEvent({ eventType: 'spawn', teamName, agentName: null, taskId: null, summary: `Team created: ${teamName}`, payload: { source: 'teamWatcher.add', filePath: path.basename(filePath) } });
       debouncedTeamsBroadcast('teams_update');
     })
     .on('change', async (filePath) => {
@@ -1010,6 +1244,7 @@ function setupWatchers() {
     .on('unlink', async (filePath) => {
       const teamName = path.basename(path.dirname(filePath));
       console.log(`👋 Team completed: ${sanitizeForLog(teamName)} - archiving for reference...`);
+      activityLog.logEvent({ eventType: 'completion', teamName, agentName: null, taskId: null, summary: `Team completed: ${teamName}`, payload: { source: 'teamWatcher.unlink' } });
       try {
         cache.delete('activeTeams');
         // Try to get team data before it's gone
@@ -1033,6 +1268,7 @@ function setupWatchers() {
     })
     .on('error', error => {
       console.error('[TEAM] Watcher error:', error);
+      activityLog.logEvent({ eventType: 'error', teamName: '', agentName: null, taskId: null, summary: 'teamWatcher error', payload: { source: 'teamWatcher', errorMessage: String(error?.message || error) } });
     });
 
   // Watch for team directory deletions (TeamDelete removes the whole dir, not just config.json)
@@ -1042,6 +1278,7 @@ function setupWatchers() {
       if (path.resolve(dirPath) === path.resolve(TEAMS_DIR)) return; // ignore root dir
       const teamName = path.basename(dirPath);
       console.log(`🗑️ Team directory removed: ${sanitizeForLog(teamName)}`);
+      activityLog.logEvent({ eventType: 'completion', teamName, agentName: null, taskId: null, summary: `Team directory removed: ${teamName}`, payload: { source: 'teamDirWatcher.unlinkDir' } });
       teamLifecycle.delete(teamName);
       debouncedTeamsBroadcast('teams_update');
     });
@@ -1058,6 +1295,7 @@ function setupWatchers() {
       const agentName = path.basename(filePath, '.json');
       const teamName = path.basename(path.dirname(path.dirname(filePath)));
       console.log(`📬 New inbox: ${sanitizeForLog(teamName)}/${sanitizeForLog(agentName)}`);
+      activityLog.logEvent({ eventType: 'message', teamName, agentName, taskId: null, summary: `New inbox: ${teamName}/${agentName}`, payload: { source: 'inboxWatcher.add', filePath: path.basename(filePath) } });
       try {
         const inboxes = await readTeamInboxes(teamName);
         broadcast({ type: 'inbox_update', teamName, inboxes });
@@ -1069,6 +1307,7 @@ function setupWatchers() {
       const agentName = path.basename(filePath, '.json');
       const teamName = path.basename(path.dirname(path.dirname(filePath)));
       console.log(`💬 Message received: ${sanitizeForLog(teamName)} → ${sanitizeForLog(agentName)}`);
+      activityLog.logEvent({ eventType: 'message', teamName, agentName, taskId: null, summary: `Inbox change: ${teamName}/${agentName}`, payload: { source: 'inboxWatcher.change', filePath: path.basename(filePath) } });
       try {
         const inboxes = await readTeamInboxes(teamName);
         broadcast({ type: 'inbox_update', teamName, inboxes });
@@ -1089,6 +1328,7 @@ function setupWatchers() {
     })
     .on('error', error => {
       console.error('[INBOX] Watcher error:', error);
+      activityLog.logEvent({ eventType: 'error', teamName: '', agentName: null, taskId: null, summary: 'inboxWatcher error', payload: { source: 'inboxWatcher', errorMessage: String(error?.message || error) } });
     });
 
   // Watch tasks directory - watch all JSON files recursively
@@ -1097,21 +1337,71 @@ function setupWatchers() {
   taskWatcher
     .on('ready', () => {
       console.log('   ✓ Task watcher is ready - tracking all your agent tasks');
+      // F2.a: Build initial log buffer from existing task files
+      buildInitialLogBuffer().catch(err => {
+        console.error('[LOG] buildInitialLogBuffer failed:', err.message);
+      });
     })
-    .on('add', (filePath) => {
+    .on('add', async (filePath) => {
       console.log(`✨ New task created: ${sanitizeForLog(path.basename(filePath))}`);
       debouncedTasksBroadcast();
+      // F2.b: normalize and emit log entry
+      try {
+        const rel = path.relative(TASKS_DIR, filePath);
+        const parts = rel.split(path.sep);
+        const team = parts[0] || '';
+        const taskId = path.basename(filePath, '.json');
+        const eventTs = Date.now();
+        const content = await fs.readFile(filePath, 'utf8');
+        const task = JSON.parse(content);
+        const entries = normalizeTaskToLogEntries(task, team, taskId, 'created', eventTs);
+        appendLogEntries(entries);
+        debouncedLogBroadcast(entries);
+      } catch (err) {
+        console.error('[LOG] taskWatcher add error:', err.message);
+      }
     })
-    .on('change', (filePath) => {
+    .on('change', async (filePath) => {
       console.log(`📝 Task updated: ${sanitizeForLog(path.basename(filePath))}`);
       debouncedTasksBroadcast();
+      // F2.b: normalize and emit log entry
+      try {
+        const rel = path.relative(TASKS_DIR, filePath);
+        const parts = rel.split(path.sep);
+        const team = parts[0] || '';
+        const taskId = path.basename(filePath, '.json');
+        const eventTs = Date.now();
+        const content = await fs.readFile(filePath, 'utf8');
+        const task = JSON.parse(content);
+        // Use 'status_change' when only the status field changed (heuristic: task has status set)
+        const action = (task && task.status) ? 'status_change' : 'updated';
+        const entries = normalizeTaskToLogEntries(task, team, taskId, action, eventTs);
+        appendLogEntries(entries);
+        debouncedLogBroadcast(entries);
+      } catch (err) {
+        console.error('[LOG] taskWatcher change error:', err.message);
+      }
     })
     .on('unlink', (filePath) => {
       console.log(`✅ Task completed/removed: ${sanitizeForLog(path.basename(filePath))}`);
       debouncedTasksBroadcast();
+      // F2.b: normalize and emit log entry for removed file (task is null)
+      try {
+        const rel = path.relative(TASKS_DIR, filePath);
+        const parts = rel.split(path.sep);
+        const team = parts[0] || '';
+        const taskId = path.basename(filePath, '.json');
+        const eventTs = Date.now();
+        const entries = normalizeTaskToLogEntries(null, team, taskId, 'removed', eventTs);
+        appendLogEntries(entries);
+        debouncedLogBroadcast(entries);
+      } catch (err) {
+        console.error('[LOG] taskWatcher unlink error:', err.message);
+      }
     })
     .on('error', error => {
       console.error('[TASK] Watcher error:', error);
+      activityLog.logEvent({ eventType: 'error', teamName: '', agentName: null, taskId: null, summary: 'taskWatcher error', payload: { source: 'taskWatcher', errorMessage: String(error?.message || error) } });
     });
 
   // Watch agent output files
@@ -1135,6 +1425,7 @@ function setupWatchers() {
     })
     .on('add', async (filePath) => {
       console.log(`🎯 Agent started: ${sanitizeForLog(path.basename(filePath))}`);
+      activityLog.logEvent({ eventType: 'spawn', teamName: '', agentName: null, taskId: path.basename(filePath, '.output'), summary: `Agent started: ${path.basename(filePath)}`, payload: { source: 'outputWatcher.add' } });
       try {
         const outputs = await getAgentOutputs();
         broadcast({ type: 'agent_outputs_update', outputs });
@@ -1144,6 +1435,45 @@ function setupWatchers() {
     })
     .on('error', error => {
       console.error('[OUTPUT] Watcher error:', error);
+      activityLog.logEvent({ eventType: 'error', teamName: '', agentName: null, taskId: null, summary: 'outputWatcher error', payload: { source: 'outputWatcher', errorMessage: String(error?.message || error) } });
+    });
+
+  // Watch Claude Code session logs (~/.claude/projects/*/*.jsonl) for token usage.
+  // Sessions append frequently while a run is in progress — debounce so we don't
+  // re-parse + broadcast on every line.
+  let usageBroadcastTimer = null;
+  const scheduleUsageBroadcast = () => {
+    if (usageBroadcastTimer) return;
+    usageBroadcastTimer = setTimeout(async () => {
+      usageBroadcastTimer = null;
+      try {
+        const summary = await usage.getSummary();
+        broadcast({ type: 'usage_update', summary });
+      } catch (err) {
+        console.error('[USAGE] broadcast error:', err.message);
+      }
+    }, 2000);
+  };
+
+  const usageWatcher = chokidar.watch(path.join(usage.PROJECTS_DIR, '*/*.jsonl'), watchOptions);
+  usageWatcher
+    .on('ready', () => {
+      console.log('   ✓ Usage watcher is ready - tracking Claude Code session token usage');
+    })
+    .on('add', (filePath) => {
+      usage.invalidateCache(filePath);
+      scheduleUsageBroadcast();
+    })
+    .on('change', (filePath) => {
+      usage.invalidateCache(filePath);
+      scheduleUsageBroadcast();
+    })
+    .on('unlink', (filePath) => {
+      usage.invalidateCache(filePath);
+      scheduleUsageBroadcast();
+    })
+    .on('error', error => {
+      console.error('[USAGE] Watcher error:', error);
     });
 }
 
@@ -1410,6 +1740,27 @@ app.get('/api/teams/:teamName/tasks', async (req, res) => {
   }
 });
 
+// Get activity log events
+app.get('/api/activity-log', async (req, res) => {
+  try {
+    const date = req.query.date || new Date().toISOString().slice(0, 10);
+    if (!activityLog.DATE_REGEX.test(date)) return res.status(400).json({ error: 'Invalid date format, expected YYYY-MM-DD' });
+    const eventType = req.query.eventType;
+    if (eventType && !activityLog.VALID_EVENT_TYPES.includes(eventType)) return res.status(400).json({ error: 'Invalid eventType' });
+    let limit;
+    if (req.query.limit !== undefined) {
+      limit = parseInt(req.query.limit, 10);
+      if (Number.isNaN(limit) || limit < 1) return res.status(400).json({ error: 'Invalid limit' });
+    }
+    limit = Math.min(activityLog.MAX_LIMIT, Math.max(1, limit || activityLog.DEFAULT_LIMIT));
+    const events = await activityLog.readEvents({ date, eventType, limit });
+    res.json({ date, eventType: eventType || null, limit, count: events.length, events });
+  } catch (err) {
+    console.error('Error reading activity log:', err.message);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Get archived teams (paginated)
 app.get('/api/archive', async (req, res) => {
   try {
@@ -1518,6 +1869,171 @@ app.get('/api/inboxes', async (req, res) => {
     res.set('Cache-Control', 'public, max-age=2');
     res.json({ inboxes: allInboxes });
   } catch (error) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ---------- F2.a: GET /api/logs ----------
+
+const VALID_LOG_TYPES = new Set(['task', 'status', 'system']);
+const LOGS_HARD_LIMIT = 500;
+const LOGS_DEFAULT_LIMIT = 50;
+
+/**
+ * Parses a since/until query parameter.
+ * Accepts ISO 8601 strings or numeric epoch-ms values.
+ * Returns epoch ms as a number, or null if param is absent.
+ * Throws an Error with message 'Invalid parameter' on bad input.
+ *
+ * @param {string|undefined} value - Raw query parameter string
+ * @param {string}           name  - Parameter name (for error messages)
+ * @returns {number|null}
+ */
+function parseTimeParam(value, name) {
+  if (value === undefined || value === null || value === '') return null;
+  // Numeric string (epoch ms)
+  if (/^\d+$/.test(value)) {
+    const ms = parseInt(value, 10);
+    if (isNaN(ms)) throw new Error('Invalid parameter');
+    return ms;
+  }
+  // ISO 8601
+  const d = new Date(value);
+  if (isNaN(d.getTime())) throw new Error(`Invalid parameter`);
+  return d.getTime();
+}
+
+/**
+ * GET /api/logs
+ *
+ * Query params:
+ *   agent?:  string          - Exact match on entry.agent
+ *   type?:   task|status|system - Whitelist filter
+ *   since?:  ISO8601|epoch_ms   - inclusive lower bound on timestamp
+ *   until?:  ISO8601|epoch_ms   - inclusive upper bound on timestamp
+ *   limit?:  number (default 50, hard cap 500)
+ *   offset?: number (default 0)
+ *
+ * Response 200: { entries, total, hasMore, bufferSize, bufferCap }
+ * Response 400: { error: 'Invalid parameter' }
+ * Response 401: handled by auth middleware
+ * Response 500: { error: 'Internal server error' }
+ *
+ * Supports ETag + If-None-Match (304 on match).
+ */
+app.get('/api/logs', (req, res) => {
+  try {
+    // --- Parse & validate query params ---
+    const agentFilter = req.query.agent !== undefined ? String(req.query.agent) : null;
+
+    const typeFilter = req.query.type !== undefined ? String(req.query.type) : null;
+    if (typeFilter !== null && !VALID_LOG_TYPES.has(typeFilter)) {
+      return res.status(400).json({ error: 'Invalid parameter' });
+    }
+
+    let sinceMs = null;
+    let untilMs = null;
+    try {
+      sinceMs = parseTimeParam(req.query.since, 'since');
+      untilMs = parseTimeParam(req.query.until, 'until');
+    } catch {
+      return res.status(400).json({ error: 'Invalid parameter' });
+    }
+
+    let limit = LOGS_DEFAULT_LIMIT;
+    if (req.query.limit !== undefined) {
+      const parsed = parseInt(req.query.limit, 10);
+      if (isNaN(parsed) || parsed < 0) {
+        return res.status(400).json({ error: 'Invalid parameter' });
+      }
+      limit = Math.min(parsed, LOGS_HARD_LIMIT);
+    }
+
+    let offset = 0;
+    if (req.query.offset !== undefined) {
+      const parsed = parseInt(req.query.offset, 10);
+      if (isNaN(parsed) || parsed < 0) {
+        return res.status(400).json({ error: 'Invalid parameter' });
+      }
+      offset = parsed;
+    }
+
+    // --- Filter logBuffer ---
+    const filtered = logBuffer.filter(entry => {
+      if (agentFilter !== null && entry.agent !== agentFilter) return false;
+      if (typeFilter !== null && entry.type !== typeFilter) return false;
+      if (sinceMs !== null && entry.timestamp < sinceMs) return false;
+      if (untilMs !== null && entry.timestamp > untilMs) return false;
+      return true;
+    });
+
+    const total = filtered.length;
+    const slice = filtered.slice(offset, offset + limit);
+    const hasMore = offset + slice.length < total;
+
+    const body = JSON.stringify({
+      entries: slice,
+      total,
+      hasMore,
+      bufferSize: logBuffer.length,
+      bufferCap: LOG_BUFFER_CAP
+    });
+
+    // ETag support (mirrors /api/teams pattern)
+    const etag = '"' + crypto.createHash('md5').update(body).digest('hex') + '"';
+    res.set('ETag', etag);
+    res.set('Cache-Control', 'no-store');
+
+    if (req.headers['if-none-match'] === etag) {
+      return res.status(304).end();
+    }
+
+    res.type('json').send(body);
+  } catch (err) {
+    console.error('[LOG] /api/logs error:', err.message);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ---------- Token usage endpoints ----------
+// Reads ~/.claude/projects/{slug}/{session}.jsonl and aggregates token usage
+// per session, per model, per project. Each Claude Code run = one session = one agent.
+
+app.get('/api/usage/summary', async (req, res) => {
+  try {
+    const summary = await usage.getSummary();
+    res.set('Cache-Control', 'public, max-age=5');
+    res.json(summary);
+  } catch (error) {
+    console.error('usage/summary error:', error.message);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.get('/api/usage/sessions', async (req, res) => {
+  try {
+    const limit = Math.min(500, Math.max(1, parseInt(req.query.limit) || 100));
+    const projectSlug = req.query.project || null;
+    const sessions = await usage.getSessions({ limit, projectSlug });
+    res.set('Cache-Control', 'public, max-age=5');
+    res.json({ sessions, count: sessions.length });
+  } catch (error) {
+    console.error('usage/sessions error:', error.message);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.get('/api/usage/sessions/:sessionId', async (req, res) => {
+  try {
+    const sid = req.params.sessionId;
+    if (!/^[a-zA-Z0-9_-]{1,128}$/.test(sid)) {
+      return res.status(400).json({ error: 'Invalid sessionId' });
+    }
+    const session = await usage.getSession(sid);
+    if (!session) return res.status(404).json({ error: 'Session not found' });
+    res.json(session);
+  } catch (error) {
+    console.error('usage/session detail error:', error.message);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

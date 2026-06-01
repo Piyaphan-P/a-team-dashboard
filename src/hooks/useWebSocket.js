@@ -25,6 +25,7 @@ export function useWebSocket(url) {
   const [teamHistory, setTeamHistory] = useState([]);
   const [agentOutputs, setAgentOutputs] = useState([]);
   const [allInboxes, setAllInboxes] = useState({});
+  const [logs, setLogs] = useState([]);
   const [isConnected, setIsConnected] = useState(false);
   const [error, setError] = useState(null);
   const [lastRawMessage, setLastRawMessage] = useState(null);
@@ -95,6 +96,14 @@ export function useWebSocket(url) {
             }
           } else if (message.type === 'agent_outputs_update') {
             setAgentOutputs(message.outputs);
+          } else if (message.type === 'log:new' && Array.isArray(message.entries)) {
+            setLogs(prev => {
+              // Dedup by entryId then keep newest 2000
+              const seen = new Set(prev.map(e => e.entryId));
+              const fresh = message.entries.filter(e => !seen.has(e.entryId));
+              if (fresh.length === 0) return prev;
+              return [...fresh, ...prev].slice(0, 2000);
+            });
           } else {
             console.warn('[WS] Unrecognized message type:', message.type, message);
           }
@@ -214,6 +223,7 @@ export function useWebSocket(url) {
     teamHistory,
     agentOutputs,
     allInboxes,
+    logs,
     isConnected,
     error,
     lastRawMessage,

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'agent-dashboard-v3';
+const CACHE_NAME = 'agent-dashboard-v4-tokens';
 const PRECACHE_URLS = [
   '/',
   '/index.html',
