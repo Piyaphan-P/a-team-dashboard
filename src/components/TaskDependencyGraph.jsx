@@ -50,6 +50,8 @@ const STATUS_COLORS = {
 };
 
 function getEffectiveStatus(task) {
+  // Completed tasks take priority — their blockedBy is historical, not active.
+  if (task.status === 'completed') return 'completed';
   if (task.blockedBy && task.blockedBy.length > 0) return 'blocked';
   return task.status || 'pending';
 }

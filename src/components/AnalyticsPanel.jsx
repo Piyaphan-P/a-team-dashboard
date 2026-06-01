@@ -131,7 +131,9 @@ export function AnalyticsPanel({ teams = [], allInboxes = {} }) {
     if (allTasks.length === 0) return [];
     const counts = { pending: 0, in_progress: 0, completed: 0, blocked: 0 };
     for (const task of allTasks) {
-      const isBlocked = task.blockedBy && task.blockedBy.length > 0;
+      // Only count as 'blocked' when the task is NOT completed and has open dependencies.
+      // A completed task may keep its blockedBy field as historical record but is no longer blocked.
+      const isBlocked = task.status !== 'completed' && task.blockedBy && task.blockedBy.length > 0;
       if (isBlocked) {
         counts.blocked++;
       } else if (task.status in counts) {

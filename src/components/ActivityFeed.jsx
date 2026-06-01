@@ -124,7 +124,7 @@ function extractTaskSnapshot(data) {
     for (const task of (team.tasks || [])) {
       total++;
       if (task.status === 'completed') completed++;
-      if (task.blockedBy && task.blockedBy.length > 0) blocked++;
+      if (task.status !== 'completed' && task.blockedBy && task.blockedBy.length > 0) blocked++;
     }
   }
   return { total, completed, blocked };

@@ -7,7 +7,7 @@ export function DetailedTaskProgress({ tasks }) {
   const pendingTasks = tasks.filter(t => t.status === 'pending');
   const inProgressTasks = tasks.filter(t => t.status === 'in_progress');
   const completedTasks = tasks.filter(t => t.status === 'completed');
-  const blockedTasks = tasks.filter(t => t.blockedBy && t.blockedBy.length > 0);
+  const blockedTasks = tasks.filter(t => t.status !== 'completed' && t.blockedBy && t.blockedBy.length > 0);
 
   const completionPercentage = tasks.length > 0
     ? Math.round((completedTasks.length / tasks.length) * 100)

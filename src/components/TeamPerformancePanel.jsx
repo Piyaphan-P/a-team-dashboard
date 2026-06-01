@@ -142,7 +142,7 @@ export function TeamPerformancePanel({ teams = [], allInboxes = {} }) {
       const completionRate = totalTasks > 0 ? (completedTasks / totalTasks) * 100 : 0;
       const inProgressTasks = tasks.filter(t => t.status === 'in_progress');
       const inProgressCount = inProgressTasks.length;
-      const blockedCount = tasks.filter(t => t.blockedBy && t.blockedBy.length > 0).length;
+      const blockedCount = tasks.filter(t => t.status !== 'completed' && t.blockedBy && t.blockedBy.length > 0).length;
       const blockerRatio = totalTasks > 0 ? (blockedCount / totalTasks) * 100 : 0;
       const teamKey = safePropKey(team.name);
       const teamInbox = teamKey !== null ? allInboxes[teamKey] : undefined;
@@ -198,7 +198,7 @@ export function TeamPerformancePanel({ teams = [], allInboxes = {} }) {
     const totalTasks = allTasks.length;
     const completed = allTasks.filter(t => t.status === 'completed').length;
     const inProgress = allTasks.filter(t => t.status === 'in_progress').length;
-    const blocked = allTasks.filter(t => t.blockedBy && t.blockedBy.length > 0).length;
+    const blocked = allTasks.filter(t => t.status !== 'completed' && t.blockedBy && t.blockedBy.length > 0).length;
     const totalMembers = teams.reduce((s, t) => s + (t.config?.members?.length || 0), 0);
     const agentsWithWork = new Set(allTasks.filter(t => t.status === 'in_progress').map(t => t.owner).filter(Boolean));
 
@@ -243,7 +243,7 @@ export function TeamPerformancePanel({ teams = [], allInboxes = {} }) {
         subject: t.subject || `Task #${t.id}`,
         owner: t.owner || 'unassigned',
         age: t.createdAt ? now - new Date(t.createdAt).getTime() : 0,
-        blocked: t.blockedBy && t.blockedBy.length > 0,
+        blocked: t.status !== 'completed' && t.blockedBy && t.blockedBy.length > 0,
       }))
       .sort((a, b) => b.age - a.age)
       .slice(0, 5);
