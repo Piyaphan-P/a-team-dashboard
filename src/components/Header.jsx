@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import PropTypes from 'prop-types';
-import { Activity, ExternalLink, Menu, X, Bell, Sun, Moon, Search, Keyboard } from 'lucide-react';
+import { ExternalLink, Menu, X, Bell, Sun, Moon, Search, Keyboard } from 'lucide-react';
 import { ConnectionStatus } from './ConnectionStatus';
 import { ExportMenu } from './ExportMenu';
 
@@ -277,58 +277,19 @@ export function Header({ isConnected, error, onMenuToggle, isMenuOpen, notificat
               onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onNavigate && onNavigate('overview'); } }}
               aria-label="Go to overview"
             >
-              {/* Logo with Animated Orange Sweep */}
-              <div
-                className="relative p-2.5 rounded-xl overflow-hidden group"
+              {/* A-Team Title */}
+              <h1
+                className="font-extrabold leading-none tracking-tight group-hover:scale-[1.02] transition-transform duration-300"
                 style={{
-                  background: 'linear-gradient(135deg, rgba(249, 115, 22, 0.2) 0%, rgba(251, 146, 60, 0.12) 100%)',
-                  boxShadow: '0 4px 12px rgba(249, 115, 22, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.1)',
-                  border: '1px solid rgba(249, 115, 22, 0.35)'
+                  fontSize: 'clamp(1.5rem, 3vw, 2.25rem)',
+                  color: '#ffffff',
+                  letterSpacing: '-0.025em',
+                  filter: 'drop-shadow(0 2px 8px rgba(255, 255, 255, 0.15))',
+                  margin: 0,
                 }}
               >
-                {/* Animated Orange Sweep Overlay */}
-                <div
-                  className="absolute inset-0 pointer-events-none"
-                  style={{
-                    background: 'linear-gradient(90deg, transparent 0%, rgba(249, 115, 22, 0.3) 50%, transparent 100%)',
-                    backgroundSize: '200% 100%',
-                    animation: 'header-orange-sweep 4s ease-in-out infinite',
-                  }}
-                />
-
-                <Activity
-                  className="h-6 w-6 text-claude-orange relative z-10 group-hover:scale-110 transition-transform duration-300"
-                  aria-hidden="true"
-                  style={{
-                    filter: 'drop-shadow(0 0 8px rgba(249, 115, 22, 0.5))'
-                  }}
-                />
-              </div>
-
-              {/* Title and Subtitle */}
-              <div className="hidden sm:block">
-                <h1
-                  className="text-xl font-bold leading-tight"
-                  style={{
-                    background: 'linear-gradient(135deg, var(--text-heading) 0%, #fb923c 100%)',
-                    WebkitBackgroundClip: 'text',
-                    WebkitTextFillColor: 'transparent',
-                    backgroundClip: 'text',
-                    letterSpacing: '-0.02em'
-                  }}
-                >
-                  Claude Agent Dashboard
-                </h1>
-                <p
-                  className="text-xs mt-0.5"
-                  style={{
-                    color: 'var(--text-muted, rgba(209, 213, 219, 0.8))',
-                    letterSpacing: '0.02em'
-                  }}
-                >
-                  Real-time agent monitoring
-                </p>
-              </div>
+                A-Team Agent Dashboard
+              </h1>
             </div>
           </div>
 

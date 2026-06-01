@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Activity, Eye, EyeOff, Lock, AlertCircle } from 'lucide-react';
+import { Eye, EyeOff, Lock, AlertCircle } from 'lucide-react';
 
 export function LoginScreen({ onLogin }) {
   const [password, setPassword] = useState('');
@@ -61,35 +61,19 @@ export function LoginScreen({ onLogin }) {
           padding: '40px 32px',
         }}
       >
-        {/* Logo / Icon */}
-        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '24px' }}>
-          <div
-            style={{
-              width: '64px',
-              height: '64px',
-              borderRadius: '50%',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              background: 'linear-gradient(135deg, rgba(249, 115, 22, 0.25) 0%, rgba(251, 146, 60, 0.15) 100%)',
-              border: '1px solid rgba(249, 115, 22, 0.4)',
-            }}
-          >
-            <Activity style={{ width: '32px', height: '32px', color: '#f97316' }} />
-          </div>
-        </div>
-
         {/* Title */}
         <h1
           style={{
             textAlign: 'center',
-            fontSize: '22px',
-            fontWeight: '700',
-            color: 'var(--text-heading)',
-            margin: '0 0 8px 0',
+            fontSize: '32px',
+            fontWeight: '800',
+            color: '#ffffff',
+            letterSpacing: '-0.025em',
+            margin: '0 0 12px 0',
+            filter: 'drop-shadow(0 2px 8px rgba(255, 255, 255, 0.15))',
           }}
         >
-          Agent Dashboard
+          A-Team Agent Dashboard
         </h1>
         <p
           style={{

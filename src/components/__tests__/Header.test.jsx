@@ -42,12 +42,7 @@ describe('Header', () => {
 
   it('renders with correct title', () => {
     render(<Header {...defaultProps} />);
-    expect(screen.getByText('Claude Agent Dashboard')).toBeInTheDocument();
-  });
-
-  it('renders subtitle text', () => {
-    render(<Header {...defaultProps} />);
-    expect(screen.getByText('Real-time agent monitoring')).toBeInTheDocument();
+    expect(screen.getByText('A-Team Agent Dashboard')).toBeInTheDocument();
   });
 
   it('calls onToggleTheme when theme toggle button is clicked', () => {
