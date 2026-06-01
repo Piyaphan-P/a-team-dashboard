@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Users, Zap, Brain, CheckSquare, Grid3X3 } from 'lucide-react';
-import { getAgentColor } from '../utils/formatting';
+import { Users, Zap, Brain, CheckSquare, Grid3X3, Sparkles } from 'lucide-react';
+import { getAgentColor, formatModel } from '../utils/formatting';
 import { getInboxMessages } from '../utils/safeKey';
 
 const TAILWIND_TO_HEX = {
@@ -77,6 +77,7 @@ export function AgentActivity({ teams, allInboxes = {} }) {
               name: member.name,
               team: team.name,
               agentType: member.agentType,
+              model: member.model,
               activeTasks: agentTasks.length,
               currentTask: agentTasks[0]?.subject || 'Idle',
               color: TAILWIND_TO_HEX[getAgentColor(member.name)] || '#60a5fa'
@@ -133,7 +134,29 @@ export function AgentActivity({ teams, allInboxes = {} }) {
                       </span>
                     )}
                   </div>
-                  <div className="text-xs mb-1" style={{ color: 'var(--text-muted)' }}>{agent.agentType}</div>
+                  <div className="flex items-center gap-2 mb-1 flex-wrap">
+                    <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{agent.agentType}</span>
+                    {(() => {
+                      const m = formatModel(agent.model);
+                      if (!m) return null;
+                      return (
+                        <span
+                          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-semibold"
+                          style={{
+                            background: m.bg,
+                            border: `1px solid ${m.border}`,
+                            color: m.color,
+                            fontSize: '10px',
+                            lineHeight: 1.2,
+                          }}
+                          title={`Model: ${agent.model}`}
+                        >
+                          <Sparkles className="h-2.5 w-2.5" />
+                          {m.label}
+                        </span>
+                      );
+                    })()}
+                  </div>
                   <div className="flex items-center gap-1 text-xs" style={{ color: 'var(--text-muted)' }}>
                     <CheckSquare className="h-3 w-3" />
                     <span className="truncate">{agent.currentTask}</span>

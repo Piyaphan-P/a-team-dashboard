@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import PropTypes from 'prop-types';
-import { Crown, Cpu, Zap } from 'lucide-react';
-import { getAgentInitials, getAgentColor } from "../utils/formatting";
+import { Crown, Cpu, Zap, Sparkles } from 'lucide-react';
+import { getAgentInitials, getAgentColor, formatModel } from "../utils/formatting";
 
 const TAILWIND_TO_HEX = {
   'bg-blue-600': '#2563eb',
@@ -177,22 +177,46 @@ export function AgentCard({ agent, isLead, agentStatus }) {
               )}
             </div>
 
-            {agent.agentType && (
-              <div
-                className="flex items-center gap-2 mb-2 py-1 rounded-lg inline-flex"
-                style={{
-                  paddingLeft: '10px',
-                  paddingRight: '10px',
-                  background: 'var(--bg-card)',
-                  border: '1px solid var(--border-color)',
-                }}
-              >
-                <Cpu className="h-4 w-4" aria-hidden="true" style={{ color: 'var(--text-secondary)' }} />
-                <span className="text-sm truncate font-medium" style={{ color: 'var(--text-muted)' }}>
-                  {agent.agentType}
-                </span>
-              </div>
-            )}
+            <div className="flex items-center gap-2 mb-2 flex-wrap">
+              {agent.agentType && (
+                <div
+                  className="flex items-center gap-2 py-1 rounded-lg inline-flex"
+                  style={{
+                    paddingLeft: '10px',
+                    paddingRight: '10px',
+                    background: 'var(--bg-card)',
+                    border: '1px solid var(--border-color)',
+                  }}
+                >
+                  <Cpu className="h-4 w-4" aria-hidden="true" style={{ color: 'var(--text-secondary)' }} />
+                  <span className="text-sm truncate font-medium" style={{ color: 'var(--text-muted)' }}>
+                    {agent.agentType}
+                  </span>
+                </div>
+              )}
+
+              {(() => {
+                const m = formatModel(agent.model);
+                if (!m) return null;
+                return (
+                  <div
+                    className="flex items-center gap-1.5 py-1 rounded-lg inline-flex"
+                    style={{
+                      paddingLeft: '10px',
+                      paddingRight: '10px',
+                      background: m.bg,
+                      border: `1px solid ${m.border}`,
+                    }}
+                    title={`Model: ${agent.model}`}
+                  >
+                    <Sparkles className="h-3.5 w-3.5" aria-hidden="true" style={{ color: m.color }} />
+                    <span className="text-xs font-semibold" style={{ color: m.color }}>
+                      {m.label}
+                    </span>
+                  </div>
+                );
+              })()}
+            </div>
 
             <p
               className="text-xs truncate"
