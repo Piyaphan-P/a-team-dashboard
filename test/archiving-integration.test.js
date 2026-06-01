@@ -131,11 +131,10 @@ describe('Team Archiving Integration Tests', () => {
     return JSON.parse(content);
   }
 
-  // Helper to clean up test files
+  // Helper to clean up test files (archive JSONs + team + tasks dirs)
   async function cleanupTestFiles() {
+    // Archive JSONs
     try {
-      // Note: Be careful with cleanup in production
-      // Only clean test-specific files
       const archiveFiles = await fs.readdir(testArchiveDir);
       for (const file of archiveFiles) {
         if (file.startsWith('test-team-') && file.endsWith('.json')) {
@@ -143,14 +142,38 @@ describe('Team Archiving Integration Tests', () => {
         }
       }
     } catch (error) {
-      // Directory might not exist, that's okay
-      if (error.code !== 'ENOENT') {
-        console.error('Cleanup error:', error);
+      if (error.code !== 'ENOENT') console.error('Cleanup archive error:', error);
+    }
+    // Team config dirs (test-team-* only)
+    try {
+      const teamDirs = await fs.readdir(testTeamsDir);
+      for (const dir of teamDirs) {
+        if (dir.startsWith('test-team-')) {
+          await fs.rm(path.join(testTeamsDir, dir), { recursive: true, force: true });
+        }
       }
+    } catch (error) {
+      if (error.code !== 'ENOENT') console.error('Cleanup teams error:', error);
+    }
+    // Task dirs (test-team-* only)
+    try {
+      const taskDirs = await fs.readdir(testTasksDir);
+      for (const dir of taskDirs) {
+        if (dir.startsWith('test-team-')) {
+          await fs.rm(path.join(testTasksDir, dir), { recursive: true, force: true });
+        }
+      }
+    } catch (error) {
+      if (error.code !== 'ENOENT') console.error('Cleanup tasks error:', error);
     }
   }
 
   beforeEach(async () => {
+    await cleanupTestFiles();
+  });
+
+  // Crucial: clean up after ALL tests so fixtures don't leak into the dashboard
+  afterAll(async () => {
     await cleanupTestFiles();
   });
 
