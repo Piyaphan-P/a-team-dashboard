@@ -8,6 +8,36 @@ import { fetchLogs, rangeToSince } from '../utils/logsApi.js';
 import { exportToCSV, exportToJSON } from '../utils/exportUtils.js';
 import { getAgentColor, getAgentInitials } from '../utils/formatting.js';
 import toast from 'react-hot-toast';
+import { List, useDynamicRowHeight } from 'react-window';
+
+const VIRTUALIZE_THRESHOLD = 200;
+
+function VirtualRow({ index, style, ariaAttributes, entries, rowHeight }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!ref.current || !rowHeight?.observeRowElements) return undefined;
+    return rowHeight.observeRowElements([ref.current]);
+  }, [rowHeight]);
+
+  const entry = entries[index];
+  if (!entry) return null;
+
+  return (
+    <div style={style} {...ariaAttributes}>
+      <div ref={ref} style={{ paddingBottom: '0.375rem' }}>
+        <LogRow entry={entry} />
+      </div>
+    </div>
+  );
+}
+
+VirtualRow.propTypes = {
+  index: PropTypes.number.isRequired,
+  style: PropTypes.object,
+  ariaAttributes: PropTypes.object,
+  entries: PropTypes.array.isRequired,
+  rowHeight: PropTypes.object,
+};
 
 dayjs.extend(relativeTime);
 
@@ -250,6 +280,9 @@ export function LogViewer({ logs: wsLogs = [], loading: initialLoading = false }
 
   const feedRef = useRef(null);
   const prevWsLogCountRef = useRef(0);
+
+  // react-window dynamic-height cache for virtualized large lists (>200 entries)
+  const rowHeight = useDynamicRowHeight({ defaultRowHeight: 72 });
 
   // --- fetchLogs wrapper ---
   const doFetch = useCallback(async ({ offset = 0, reset = false } = {}) => {
@@ -658,6 +691,39 @@ export function LogViewer({ logs: wsLogs = [], loading: initialLoading = false }
                   <p className="text-xs" style={{ marginTop: '0.25rem', marginBottom: 0, color: 'var(--text-muted)' }}>
                     Log entries will appear here when tasks run
                   </p>
+                )}
+              </div>
+            ) : mergedEntries.length > VIRTUALIZE_THRESHOLD ? (
+              /* Virtualized — react-window for >200 entries */
+              <div style={{ height: '100%', minHeight: '400px' }}>
+                <List
+                  rowComponent={VirtualRow}
+                  rowCount={mergedEntries.length}
+                  rowHeight={rowHeight}
+                  rowProps={{ entries: mergedEntries, rowHeight }}
+                  defaultHeight={500}
+                  overscanCount={5}
+                />
+                {hasMore && (
+                  <div style={{ display: 'flex', justifyContent: 'center', paddingTop: '0.75rem' }}>
+                    <button
+                      onClick={handleLoadMore}
+                      disabled={restLoading}
+                      aria-label="Load more log entries"
+                      style={{
+                        padding: '0.375rem 1.25rem',
+                        borderRadius: '9999px',
+                        border: '1px solid var(--border-color)',
+                        background: 'var(--tab-inactive-bg)',
+                        color: 'var(--text-secondary)',
+                        fontSize: '0.75rem',
+                        cursor: restLoading ? 'wait' : 'pointer',
+                        opacity: restLoading ? 0.6 : 1,
+                      }}
+                    >
+                      {restLoading ? 'Loading…' : 'Load more'}
+                    </button>
+                  </div>
                 )}
               </div>
             ) : (

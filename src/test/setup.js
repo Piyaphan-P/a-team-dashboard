@@ -17,3 +17,12 @@ global.WebSocket = class WebSocket {
   addEventListener() {}
   removeEventListener() {}
 };
+
+// Polyfill ResizeObserver for react-window v2 (jsdom does not implement it)
+if (typeof globalThis.ResizeObserver === 'undefined') {
+  globalThis.ResizeObserver = class ResizeObserver {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  };
+}
