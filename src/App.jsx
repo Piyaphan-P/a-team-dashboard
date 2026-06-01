@@ -19,7 +19,7 @@ import { TeamHistory } from './components/TeamHistory';
 import { AgentOutputViewer } from './components/AgentOutputViewer';
 const ArchiveViewer = lazy(() => import('./components/ArchiveViewer').then(m => ({ default: m.ArchiveViewer })));
 import { InboxViewer } from './components/InboxViewer';
-import { LogViewer } from './components/LogViewer';
+const LogViewer = lazy(() => import('./components/LogViewer').then(m => ({ default: m.LogViewer })));
 import { TeamTimeline } from './components/TeamTimeline';
 import { CommandPalette } from './components/CommandPalette';
 import { KeyboardShortcutsModal } from './components/KeyboardShortcutsModal';
@@ -617,7 +617,9 @@ function App() {
           {activeTab === 'logs' && (
             <div role="tabpanel" id="tab-panel-logs" aria-labelledby="tab-logs" className="animate-fadeIn">
               <ErrorBoundary name="Log Viewer">
-                <LogViewer logs={logs} loading={connectionStatus === 'connecting' && logs.length === 0} />
+                <Suspense fallback={<SkeletonCard />}>
+                  <LogViewer logs={logs} loading={connectionStatus === 'connecting' && logs.length === 0} />
+                </Suspense>
               </ErrorBoundary>
             </div>
           )}

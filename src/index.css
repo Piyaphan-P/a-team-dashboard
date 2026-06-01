@@ -446,17 +446,17 @@ strong, b {
 .grid-cols-6 { grid-template-columns: repeat(6, minmax(0, 1fr)); }
 
 @media (min-width: 768px) {
-  .md\\:grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .md\:grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (min-width: 1024px) {
-  .lg\\:grid-cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .lg\\:col-span-2 { grid-column: span 2 / span 2; }
-  .lg\\:col-span-1 { grid-column: span 1 / span 1; }
+  .lg\:grid-cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .lg\:col-span-2 { grid-column: span 2 / span 2; }
+  .lg\:col-span-1 { grid-column: span 1 / span 1; }
 }
 
 @media (min-width: 1280px) {
-  .xl\\:grid-cols-6 { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  .xl\:grid-cols-6 { grid-template-columns: repeat(6, minmax(0, 1fr)); }
 }
 
 /* Flex */
@@ -840,11 +840,11 @@ strong, b {
 .transition-colors { transition-property: color, background-color, border-color; transition-duration: 150ms; }
 
 /* Hover states */
-.hover\\:bg-gray-600:hover { background-color: #4b5563; }
-.hover\\:bg-gray-700:hover { background-color: #374151; }
-.hover\\:bg-orange-600:hover { background-color: #ea580c; }
-.hover\\:border-gray-500:hover { border-color: #a3aab7; }
-.hover\\:text-white:hover { color: #ffffff; }
+.hover\:bg-gray-600:hover { background-color: #4b5563; }
+.hover\:bg-gray-700:hover { background-color: #374151; }
+.hover\:bg-orange-600:hover { background-color: #ea580c; }
+.hover\:border-gray-500:hover { border-color: #a3aab7; }
+.hover\:text-white:hover { color: #ffffff; }
 
 /* Space between - Enhanced vertical rhythm */
 .space-y-1 > * + * { margin-top: 0.25rem; } /* 4px */
