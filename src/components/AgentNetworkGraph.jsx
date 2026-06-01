@@ -329,8 +329,25 @@ export function AgentNetworkGraph({ allInboxes = {}, teams = [] }) {
       .data(nodes, d => d.id)
       .join(
         enter => enter.append('g').attr('opacity', 0)
+          .attr('tabindex', 0)
+          .attr('role', 'button')
+          .attr('aria-label', d => `Agent ${d.name || d.id}${d.teams?.length ? ' on ' + d.teams.join(', ') : ''} — press Enter to view inbox`)
+          .style('outline', 'none')
+          .on('keydown', (event, d) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault();
+              setSelectedAgentId(d.id);
+            }
+          })
+          .on('focus', function () {
+            select(this).select('circle.body').attr('stroke-width', 4);
+          })
+          .on('blur', function () {
+            select(this).select('circle.body').attr('stroke-width', 2);
+          })
           .call(sel => sel.transition().duration(300).attr('opacity', 1)),
-        update => update.call(sel => sel.transition().duration(300).attr('opacity', 1)),
+        update => update.call(sel => sel.transition().duration(300).attr('opacity', 1))
+          .attr('aria-label', d => `Agent ${d.name || d.id}${d.teams?.length ? ' on ' + d.teams.join(', ') : ''} — press Enter to view inbox`),
         exit => exit.call(sel => sel.transition().duration(300)
           .attr('opacity', 0)
           .remove())
