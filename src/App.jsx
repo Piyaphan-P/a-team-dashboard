@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, lazy, Suspense } from 'react';
 import { Toaster } from 'react-hot-toast';
-import { Activity, ExternalLink, BarChart3, MessageSquare, Users, Settings, History as HistoryIcon, Archive, Inbox, TrendingUp, Coins, FileText } from 'lucide-react';
+import { Activity, ExternalLink, BarChart3, MessageSquare, Users, Settings, History as HistoryIcon, Archive, Inbox, TrendingUp, Coins, FileText, Network } from 'lucide-react';
 import { useWebSocket } from './hooks/useWebSocket';
 import { useInboxNotifications } from './hooks/useInboxNotifications';
 import { useToastNotifications } from './hooks/useToastNotifications';
@@ -20,6 +20,7 @@ import { AgentOutputViewer } from './components/AgentOutputViewer';
 const ArchiveViewer = lazy(() => import('./components/ArchiveViewer').then(m => ({ default: m.ArchiveViewer })));
 import { InboxViewer } from './components/InboxViewer';
 const LogViewer = lazy(() => import('./components/LogViewer').then(m => ({ default: m.LogViewer })));
+const WorkflowDiagram = lazy(() => import('./components/WorkflowDiagram').then(m => ({ default: m.WorkflowDiagram })));
 import { TeamTimeline } from './components/TeamTimeline';
 import { CommandPalette } from './components/CommandPalette';
 import { KeyboardShortcutsModal } from './components/KeyboardShortcutsModal';
@@ -398,6 +399,23 @@ function App() {
               <Coins className="h-4 w-4" aria-hidden="true" />
               Tokens<span className="ml-1.5 opacity-40 font-mono hidden lg:inline" style={{ fontSize: '10px' }} aria-hidden="true">⌘9</span>
             </button>
+            <button
+              id="tab-workflow"
+              onClick={() => setActiveTab('workflow')}
+              onKeyDown={handleTabKeyDown}
+              role="tab"
+              aria-selected={activeTab === 'workflow'}
+              aria-controls="tab-panel-workflow"
+              aria-label="Workflow tab"
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all whitespace-nowrap ${
+                activeTab === 'workflow'
+                  ? 'bg-claude-orange text-white shadow-lg'
+                  : 'tab-btn-inactive'
+              }`}
+            >
+              <Network className="h-4 w-4" aria-hidden="true" />
+              Workflow
+            </button>
           </div>
         </nav>
 
@@ -639,6 +657,16 @@ function App() {
               <ErrorBoundary name="Token Usage Panel">
                 <Suspense fallback={<SkeletonChart />}>
                   <TokenUsagePanel />
+                </Suspense>
+              </ErrorBoundary>
+            </div>
+          )}
+
+          {activeTab === 'workflow' && (
+            <div role="tabpanel" id="tab-panel-workflow" aria-labelledby="tab-workflow" className="animate-fadeIn">
+              <ErrorBoundary name="Workflow Diagram">
+                <Suspense fallback={<SkeletonCard />}>
+                  <WorkflowDiagram teams={teams} allInboxes={allInboxes} />
                 </Suspense>
               </ErrorBoundary>
             </div>
