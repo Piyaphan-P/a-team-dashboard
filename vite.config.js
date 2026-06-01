@@ -35,11 +35,12 @@ export default defineConfig({
     chunkSizeWarningLimit: 600,
     rollupOptions: {
       output: {
-        manualChunks: {
-          'icons': ['lucide-react'],
-          'charts': ['recharts'],
-          'd3-core': ['d3'],
-          'utils': ['dayjs', 'react-hot-toast']
+        // Vite 8 (rolldown) requires function form for manualChunks
+        manualChunks(id) {
+          if (id.includes('node_modules/lucide-react')) return 'icons';
+          if (id.includes('node_modules/recharts')) return 'charts';
+          if (id.includes('node_modules/d3')) return 'd3-core';
+          if (id.includes('node_modules/dayjs') || id.includes('node_modules/react-hot-toast')) return 'utils';
         }
       }
     }
