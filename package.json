@@ -77,7 +77,7 @@
     "jsdom": "^28.0.0",
     "jsfuzz": "^1.0.15",
     "license-checker": "^25.0.1",
-    "lucide-react": "^0.563.0",
+    "lucide-react": "^1.17.0",
     "prop-types": "^15.8.1",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
