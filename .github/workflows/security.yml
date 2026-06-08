@@ -152,7 +152,7 @@ jobs:
 
     - name: Run Trivy vulnerability scanner
       if: steps.check-dockerfile.outputs.dockerfile_exists == 'true'
-      uses: aquasecurity/trivy-action@314ff8b43182423b84c50b1670b0e10f858f2d98 # v0.34.1
+      uses: aquasecurity/trivy-action@bfa4b33a029b9aa80ddb784b45574c30e072c59e # v0.34.1
       with:
         image-ref: 'claude-team-dashboard:${{ github.sha }}'
         format: 'sarif'
